@@ -62,12 +62,12 @@ events = [
 ]
 
 matches = [
-    {"event": "Crown Jewel", "match": "The American Nightmare vs. The Ring General", "predictions": ["The American Nightmare", "The Ring General"]},
-    {"event": "Crown Jewel", "match": "Seth Freakin Rollins vs. Big Bronson Reed", "predictions": ["Seth Freakin Rollins", "Big Bronson Reed"]},
-    {"event": "Crown Jewel", "match": "The Legend Killer vs. KO", "predictions": ["The Legend Killer", "KO"]},
-    {"event": "Crown Jewel", "match": "Nia Jax vs. Liv Morgan", "predictions": ["Nia Jax", "Liv Morgan"]},
-    {"event": "Crown Jewel", "match": "LA Knight vs. Andrade vs. Carmello Hayes", "predictions": ["LA Knight", "Andrade", "Carmello Hayes"]},
-    {"event": "Crown Jewel", "match": "Jade and Bianca vs. Dmg Ctrl vs. Meta Four vs. Chelsea Greeeen and Piper", "predictions": ["Jade and Bianca", "Dmg Ctrl", "Meta Four", "Chelsea Greeeen and Piper"]},
+    {"event": "Crown Jewel", "match": "The American Nightmare vs. The Ring General", "predictions": ["The American Nightmare", "The Ring General"], "winner": None},
+    {"event": "Crown Jewel", "match": "Seth Freakin Rollins vs. Big Bronson Reed", "predictions": ["Seth Freakin Rollins", "Big Bronson Reed"], "winner": None},
+    {"event": "Crown Jewel", "match": "The Legend Killer vs. KO", "predictions": ["The Legend Killer", "KO"], "winner": None},
+    {"event": "Crown Jewel", "match": "Nia Jax vs. Liv Morgan", "predictions": ["Nia Jax", "Liv Morgan"], "winner": None},
+    {"event": "Crown Jewel", "match": "LA Knight vs. Andrade vs. Carmello Hayes", "predictions": ["LA Knight", "Andrade", "Carmello Hayes"], "winner": None},
+    {"event": "Crown Jewel", "match": "Jade and Bianca vs. Dmg Ctrl vs. Meta Four vs. Chelsea Green and Piper", "predictions": ["Jade and Bianca", "Dmg Ctrl", "Meta Four", "Chelsea Green and Piper"], "winner": None},
 ]
 
 class WWEApp:
@@ -177,6 +177,9 @@ class WWEApp:
         self.leaderboard_button = tk.Button(self.dashboard_window, text="View Leaderboard", command=self.show_leaderboard, width=20, bg="#3498db", fg="#ffffff")
         self.leaderboard_button.pack(pady=5)
 
+        self.set_results_button = tk.Button(self.dashboard_window, text="Set Match Results", command=self.set_match_results, width=20, bg="#3498db", fg="#ffffff")
+        self.set_results_button.pack(pady=5)
+
         self.logout_button = tk.Button(self.dashboard_window, text="Logout", command=self.logout, width=20, bg="#e74c3c", fg="#ffffff")
         self.logout_button.pack(pady=20)
 
@@ -189,90 +192,122 @@ class WWEApp:
         match_window.geometry("400x400")
         match_window.configure(bg="#2E2E38")
 
-        tk.Label(match_window, text=f"Matches for {event_name}:", font=("Helvetica", 14), bg="#2E2E38", fg="#EAEAEA").pack(pady=10)
+        tk.Label(match_window, text=f"Matches for {event_name}", font=("Helvetica", 16), bg="#2E2E38", fg="#EAEAEA").pack(pady=10)
 
         self.match_results = {}
-
         for match in matches_for_event:
-            match_label = tk.Label(match_window, text=match["match"], bg="#2E2E38", fg="#EAEAEA")
+            match_label = tk.Label(match_window, text=match['match'], bg="#2E2E38", fg="#EAEAEA")
             match_label.pack(pady=5)
 
-            prediction = simpledialog.askstring("Prediction", f"Who do you think will win?\nOptions: {', '.join(match['predictions'])}")
-            self.match_results[match["match"]] = prediction if prediction in match["predictions"] else "Invalid prediction"
+            user_prediction = simpledialog.askstring("Prediction", f"Who do you think will win in '{match['match']}'? ({', '.join(match['predictions'])})")
+            self.match_results[match["match"]] = user_prediction if user_prediction in match['predictions'] else None
 
-        self.simulate_button = tk.Button(match_window, text="Simulate Matches", command=lambda: self.simulate_matches(event_name, self.match_results), bg="#3498db", fg="#ffffff")
-        self.simulate_button.pack(pady=10)
+            # Store prediction in database
+            if self.match_results[match["match"]]:
+                match_id = self.get_match_id(match["match"], event_name)
+                self.store_prediction(self.username, match_id, self.match_results[match["match"]])
 
-    def simulate_matches(self, event_name, match_results):
-        match_outcomes = []
-        for match, user_prediction in match_results.items():
-            winner = random.choice([winner for winner in match["predictions"]])
-            match_outcomes.append((match, winner, user_prediction))
-            self.save_match_result(event_name, match, winner, user_prediction)
+        # Show results button
+        show_results_button = tk.Button(match_window, text="Show Results", command=lambda: self.show_match_results(match_window), bg="#3498db", fg="#ffffff")
+        show_results_button.pack(pady=10)
 
-        # Show the match outcomes
-        result_window = tk.Toplevel(self.dashboard_window)
-        result_window.title("Match Outcomes")
-        result_window.geometry("400x400")
-        result_window.configure(bg="#2E2E38")
+    def show_match_results(self, match_window):
+        results_text = "Your Predictions:\n\n"
+        for match, prediction in self.match_results.items():
+            results_text += f"{match}: {prediction}\n"
 
-        tk.Label(result_window, text="Match Outcomes:", font=("Helvetica", 14), bg="#2E2E38", fg="#EAEAEA").pack(pady=10)
-        for match, winner, user_prediction in match_outcomes:
-            result_label = tk.Label(result_window, text=f"{match}: Winner - {winner} | Your Prediction - {user_prediction}", bg="#2E2E38", fg="#EAEAEA")
-            result_label.pack(pady=5)
+        messagebox.showinfo("Match Results", results_text)
 
-    def save_match_result(self, event_name, match_name, winner, user_prediction):
+    def get_match_id(self, match_name, event_name):
         cursor = self.conn.cursor()
-        
-        # Find the event ID
-        cursor.execute("SELECT id FROM events WHERE name=?", (event_name,))
-        event_id = cursor.fetchone()
-        if event_id:
-            event_id = event_id[0]
+        cursor.execute("SELECT id FROM matches WHERE match = ? AND event_id = (SELECT id FROM events WHERE name = ?)", (match_name, event_name))
+        match_id = cursor.fetchone()
+        return match_id[0] if match_id else None
 
-            # Insert match result into matches table
-            cursor.execute("INSERT INTO matches (event_id, match, winner) VALUES (?, ?, ?)", (event_id, match_name, winner))
-            match_id = cursor.lastrowid
+    def store_prediction(self, username, match_id, user_prediction):
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT id FROM users WHERE username = ?", (username,))
+        user_id = cursor.fetchone()
+        if user_id:
+            cursor.execute("INSERT INTO match_history (user_id, match_id, user_prediction, result) VALUES (?, ?, ?, ?)", 
+                           (user_id[0], match_id, user_prediction, "Pending"))
+            self.conn.commit()
 
-            # Insert user's prediction into match history
-            cursor.execute("SELECT id FROM users WHERE username=?", (self.username,))
-            user_id = cursor.fetchone()
-            if user_id:
-                user_id = user_id[0]
-                cursor.execute("INSERT INTO match_history (user_id, match_id, user_prediction, result) VALUES (?, ?, ?, ?)", 
-                               (user_id, match_id, user_prediction, "Won" if user_prediction == winner else "Lost"))
+    def add_user(self, username):
+        cursor = self.conn.cursor()
+        try:
+            cursor.execute("INSERT INTO users (username) VALUES (?)", (username,))
+            self.conn.commit()
+        except sqlite3.IntegrityError:
+            messagebox.showerror("Error", "Username already exists. Please choose a different username.")
 
-        self.conn.commit()
+    def check_user_exists(self, username):
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT id FROM users WHERE username = ?", (username,))
+        return cursor.fetchone() is not None
 
     def show_leaderboard(self):
-        leaderboard_window = tk.Toplevel(self.dashboard_window)
+        leaderboard_window = tk.Toplevel(self.root)
         leaderboard_window.title("Leaderboard")
-        leaderboard_window.geometry("400x400")
+        leaderboard_window.geometry("300x400")
         leaderboard_window.configure(bg="#2E2E38")
 
-        tk.Label(leaderboard_window, text="Leaderboard:", font=("Helvetica", 14), bg="#2E2E38", fg="#EAEAEA").pack(pady=10)
+        tk.Label(leaderboard_window, text="Leaderboard:", font=("Helvetica", 16), bg="#2E2E38", fg="#EAEAEA").pack(pady=10)
 
         cursor = self.conn.cursor()
-        cursor.execute("SELECT username, wins, losses FROM users")
+        cursor.execute("SELECT username, wins, losses FROM users ORDER BY wins DESC")
         users = cursor.fetchall()
 
-        for username, wins, losses in users:
-            user_label = tk.Label(leaderboard_window, text=f"{username}: Wins - {wins}, Losses - {losses}", bg="#2E2E38", fg="#EAEAEA")
-            user_label.pack(pady=5)
+        for user in users:
+            username, wins, losses = user
+            tk.Label(leaderboard_window, text=f"{username}: {wins} Wins, {losses} Losses", bg="#2E2E38", fg="#EAEAEA").pack(pady=5)
+
+    def set_match_results(self):
+        event_name = self.event_combobox.get()
+        matches_for_event = [match for match in matches if match['event'] == event_name]
+
+        results_window = tk.Toplevel(self.dashboard_window)
+        results_window.title(f"Set Results for {event_name}")
+        results_window.geometry("400x400")
+        results_window.configure(bg="#2E2E38")
+
+        tk.Label(results_window, text=f"Set Match Results for {event_name}", font=("Helvetica", 16), bg="#2E2E38", fg="#EAEAEA").pack(pady=10)
+
+        for match in matches_for_event:
+            match_label = tk.Label(results_window, text=match['match'], bg="#2E2E38", fg="#EAEAEA")
+            match_label.pack(pady=5)
+
+            winner = simpledialog.askstring("Winner", f"Who won in '{match['match']}'? ({', '.join(match['predictions'])})")
+            match['winner'] = winner if winner in match['predictions'] else None
+            match_id = self.get_match_id(match['match'], event_name)
+
+            if match['winner']:
+                self.update_match_result(match_id, match['winner'])
+                self.update_user_predictions(match_id, match['winner'])
+
+        messagebox.showinfo("Results Set", "Match results have been successfully set!")
+
+    def update_match_result(self, match_id, winner):
+        cursor = self.conn.cursor()
+        cursor.execute("UPDATE matches SET winner = ? WHERE id = ?", (winner, match_id))
+        self.conn.commit()
+
+    def update_user_predictions(self, match_id, winner):
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT user_id, user_prediction FROM match_history WHERE match_id = ?", (match_id,))
+        predictions = cursor.fetchall()
+
+        for user_id, user_prediction in predictions:
+            if user_prediction == winner:
+                cursor.execute("UPDATE users SET wins = wins + 1 WHERE id = ?", (user_id,))
+            else:
+                cursor.execute("UPDATE users SET losses = losses + 1 WHERE id = ?", (user_id,))
+        
+        self.conn.commit()
 
     def logout(self):
         self.username = None
         self.dashboard_window.destroy()
-
-    def check_user_exists(self, username):
-        cursor = self.conn.cursor()
-        cursor.execute("SELECT * FROM users WHERE username=?", (username,))
-        return cursor.fetchone() is not None
-
-    def add_user(self, username):
-        cursor = self.conn.cursor()
-        cursor.execute("INSERT INTO users (username) VALUES (?)", (username,))
-        self.conn.commit()
 
 if __name__ == "__main__":
     root = tk.Tk()
