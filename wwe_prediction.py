@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import messagebox, simpledialog, ttk
 import sqlite3
 import random
+import matplotlib.pyplot as plt
 
 # Database setup
 def init_db():
@@ -120,7 +121,7 @@ class WWEApp:
 
         cancel_button = tk.Button(self.login_window, text="Cancel", command=self.login_window.destroy, bg="#e74c3c", fg="#ffffff")
         cancel_button.pack(pady=5)
-
+    
     def show_register_window(self):
         self.register_window = tk.Toplevel(self.root)
         self.register_window.title("Register")
@@ -177,11 +178,43 @@ class WWEApp:
         self.leaderboard_button = tk.Button(self.dashboard_window, text="View Leaderboard", command=self.show_leaderboard, width=20, bg="#3498db", fg="#ffffff")
         self.leaderboard_button.pack(pady=5)
 
+        self.visualize_button = tk.Button(self.dashboard_window, text="Visualize User Stats", command=self.visualize_user_stats, width=20, bg="#3498db", fg="#ffffff")
+        self.visualize_button.pack(pady=5)
+
         self.set_results_button = tk.Button(self.dashboard_window, text="Set Match Results", command=self.set_match_results, width=20, bg="#3498db", fg="#ffffff")
         self.set_results_button.pack(pady=5)
 
         self.logout_button = tk.Button(self.dashboard_window, text="Logout", command=self.logout, width=20, bg="#e74c3c", fg="#ffffff")
         self.logout_button.pack(pady=20)
+
+    def visualize_user_stats(self):
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT username, wins, losses FROM users")
+        users = cursor.fetchall()
+
+        if not users:
+            messagebox.showinfo("Info", "No user data available.")
+            return
+
+        usernames = [user[0] for user in users]
+        wins = [user[1] for user in users]
+        losses = [user[2] for user in users]
+
+        fig, ax = plt.subplots()
+        width = 0.35
+
+        # Create a bar chart
+        ax.bar(usernames, wins, width, label='Wins', color='green')
+        ax.bar([x for x in usernames], losses, width, label='Losses', bottom=wins, color='red')
+
+        ax.set_xlabel('Users')
+        ax.set_ylabel('Count')
+        ax.set_title('Wins and Losses of Users')
+        ax.legend()
+
+        plt.xticks(rotation=45)
+        plt.tight_layout()
+        plt.show()
 
     def display_event_matches(self):
         event_name = self.event_combobox.get()
@@ -255,12 +288,22 @@ class WWEApp:
         tk.Label(leaderboard_window, text="Leaderboard:", font=("Helvetica", 16), bg="#2E2E38", fg="#EAEAEA").pack(pady=10)
 
         cursor = self.conn.cursor()
-        cursor.execute("SELECT username, wins, losses FROM users ORDER BY wins DESC")
+        cursor.execute("SELECT username, wins, losses FROM users ORDER BY wins DESC, (wins / (wins + losses)) DESC")
         users = cursor.fetchall()
 
+        rank = 1
         for user in users:
             username, wins, losses = user
-            tk.Label(leaderboard_window, text=f"{username}: {wins} Wins, {losses} Losses", bg="#2E2E38", fg="#EAEAEA").pack(pady=5)
+            accuracy = round(wins / (wins + losses) * 100, 2) if wins + losses > 0 else 0
+            style = "⭐" if rank <= 3 else ""  # Highlight top 3
+            tk.Label(
+                leaderboard_window,
+                text=f"{rank}. {username} - {wins} Wins, {losses} Losses | Accuracy: {accuracy}% {style}",
+                bg="#2E2E38",
+                fg="#FFD700" if rank <= 3 else "#EAEAEA"
+            ).pack(pady=5)
+            rank += 1
+
 
     def set_match_results(self):
         event_name = self.event_combobox.get()
